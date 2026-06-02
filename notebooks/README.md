@@ -50,3 +50,24 @@ set the env var before launching:
 ```bash
 JAX_PLATFORMS=cpu uv run --extra dev marimo run notebooks/tsp_quickstart.py
 ```
+
+## `curve_filling.py`
+
+A by-eye explainer for the space-filling-curve constructors. Pick an instance —
+a **dense random cloud** by default (~1500 points, so the curve's shape reads
+clearly), or any bundled TSPLIB instance — and a curve (`hilbert`, `morton (x,y)`,
+`morton (y,x)`, `moore`), then drag the **circular rank-window slider**
+([`wigglystuff.CircularRangeSlider`](https://github.com/koaning/wigglystuff)), shown
+just left of the map, to highlight a contiguous stretch of the curve — Hilbert/Moore
+keep it as one tight blob, Morton teleports across the plane. A **resolution** slider
+exposes the constructors' `bits` argument (the `2**bits` grid): drop it low to watch
+cities collapse into shared cells. The window wraps seamlessly, matching the Moore
+curve's closed loop.
+
+```bash
+# edit interactively
+uv run --extra dev marimo edit notebooks/curve_filling.py
+
+# or run as a read-only app
+uv run --extra dev marimo run notebooks/curve_filling.py
+```

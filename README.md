@@ -96,10 +96,81 @@ file is Kaggle competition data, bundled here for offline reproducibility.)*
 
 ## Solvers
 
-`tspjax.solvers` is intentionally empty in v1 — build your jax algorithms
-interactively against `problem.distances`, then promote the keepers. Solver
-functions should take raw arrays (never a `Problem`) so they stay `jit`/`vmap`
-friendly.
+`tspjax.solvers` ships two local-search improvers: `two_opt` and `three_opt`.
+Both take **raw arrays** — an `(n, n)` distance matrix and an optional `(n,)`
+start tour — and return the improved tour, never touching a `Problem`, so they
+stay `jit`/`vmap` friendly. Each runs entirely on device (the search loop is a
+`lax.while_loop`) and scores candidates in a positional `window`, which keeps
+peak memory bounded and — with a curve-ordered start (see below) — doubles as a
+spatial neighbourhood.
+
+```python
+from tspjax.construct import hilbert_tour
+from tspjax.solvers import two_opt, three_opt
+
+p = tspjax.load("berlin52")
+tour = hilbert_tour(p.coords)              # good starting tour
+tour = two_opt(p.distances, tour, window=20)
+tour = three_opt(p.distances, tour, window=10)
+p.tour_length(tour)
+```
+
+## Perturbations
+
+A local-search solver stops at a *local* optimum. To keep searching you *kick*
+the tour and re-optimise — that's iterated local search. `tspjax.perturb`
+provides the three classic kicks: `double_bridge`, `random_reversal`, and
+`random_shuffle`. Each takes a `(tour, key, *, ...)` (a `jax.random` key, never a
+`Problem`), returns a `(n,)` int32 permutation, and is `jit`/`vmap`-friendly.
+
+```python
+import jax
+from tspjax.construct import hilbert_tour
+from tspjax.perturb import double_bridge
+from tspjax.solvers import two_opt
+
+p = tspjax.load("berlin52")
+tour = two_opt(p.distances, hilbert_tour(p.coords))   # local optimum
+kicked = double_bridge(tour, jax.random.PRNGKey(0))   # escape it
+tour = two_opt(p.distances, kicked)                   # re-optimise; keep if better
+```
+
+`random_reversal` and `random_shuffle` take a `max_len=` to cap the kick
+strength.
+
+## Iterated local search
+
+`iterated_local_search` wires the kick → improve → accept loop together: it
+improves once, then repeatedly perturbs and re-improves, keeping any candidate
+that beats the current tour and tracking the best one ever seen. You compose the
+improver yourself — `improve` is any `tour -> tour` callable — so you decide the
+schedule (two_opt only, two_opt then three_opt, different windows, …):
+
+```python
+import jax
+from tspjax.construct import hilbert_tour
+from tspjax.perturb import double_bridge
+from tspjax.solvers import two_opt, three_opt, iterated_local_search
+
+p = tspjax.load("berlin52")
+D = p.distances
+
+# the improver schedule is yours: two_opt for a bit, then a 3-opt polish
+improve = lambda t: three_opt(D, two_opt(D, t, window=20), window=10)
+
+best, best_len, history = iterated_local_search(
+    D, hilbert_tour(p.coords), improve, jax.random.PRNGKey(0),
+    perturb=double_bridge,   # the kick (defaults to double_bridge)
+    steps=100,
+)
+```
+
+It returns `(best_tour, best_length, history)`. `history` is a `(steps + 1,)`
+array of lengths — `history[0]` is the initial local optimum, the rest are each
+iteration's candidate — so you can plot the search exploring;
+`jnp.minimum.accumulate(history)` is the best-so-far convergence curve. It's a
+host-level driver (it loops in Python and calls the on-device improvers each
+step), which is the right altitude for a metaheuristic.
 
 ## Data
 

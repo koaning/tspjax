@@ -26,8 +26,9 @@ Notebook-first: the intended workflow is interactive in marimo.
 │   ├── plot.py              # matplotlib tour plotting (JAX-free)
 │   ├── solvers/
 │   │   ├── __init__.py      # solver exports
-│   │   ├── _local_search.py # shared best-improvement / windowing core
-│   │   ├── two_opt.py       # windowed 2-opt
+│   │   ├── _local_search.py # shared best-improvement loop + blocked best-move fold
+│   │   ├── candidates.py    # pluggable neighbourhoods (all_pairs/windowed/nearest/longest_edge)
+│   │   ├── two_opt.py       # 2-opt
 │   │   └── three_opt.py     # 3-opt
 │   └── data/
 │       ├── problems/tsp/    # 111 symmetric .tsp instances
@@ -36,7 +37,7 @@ Notebook-first: the intended workflow is interactive in marimo.
 │       ├── atsp_solutions   # best-known lengths (asymmetric)
 │       └── santa/cities.csv.zip  # Santa 2018 coords (~198k cities, zipped)
 ├── tests/             # pytest suite, one test_*.py per module
-├── notebooks/         # marimo notebooks — tsp_quickstart.py
+├── notebooks/         # marimo notebooks — tsp_quickstart.py, curve_filling.py
 ├── Makefile           # install / test / notebooks / pypi targets
 ├── pyproject.toml     # metadata + deps (jax, numpy, matplotlib; dev: pytest, marimo)
 ├── conductor.json     # Conductor workspace setup/run scripts
@@ -55,6 +56,7 @@ Notebook-first: the intended workflow is interactive in marimo.
 | Distance kernels (EUC_2D, EUC_3D, GEO, ATT, CEIL_2D; TSPLIB rounding) | `src/tspjax/distances.py` |
 | Tour constructors (`hilbert_tour`, `morton_tour`, `moore_tour`) | `src/tspjax/construct.py` |
 | Solvers (`two_opt`, `three_opt` + shared `_local_search` core) | `src/tspjax/solvers/` |
+| Candidate neighbourhoods (`all_pairs`, `windowed`, `nearest`, `longest_edge`) | `src/tspjax/solvers/candidates.py` |
 | Kaggle Santa 2018 (prime-path cost) | `src/tspjax/santa.py` |
 | Tour plotting (matplotlib, JAX-free) | `src/tspjax/plot.py` |
 | Bundled data | `src/tspjax/data/` |

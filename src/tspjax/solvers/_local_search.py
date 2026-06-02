@@ -8,10 +8,14 @@ supplied as two plain closures — there is no solver class hierarchy.
 
 Two pieces live here:
 
-* :func:`_windowed_best` — scans the candidate space in fixed-size *blocks* with a
+* :func:`_fold_best` — scans the candidate space in fixed-size *blocks* with a
   ``lax.fori_loop``, folding a running best. Peak memory is the size of one block's
   score grid, never the full ``O(n^k)`` candidate set. This is what keeps the search
-  in memory for large tours (and what makes 3-opt feasible at all).
+  in memory for large tours (and what makes 3-opt feasible at all). Each block reports
+  both its candidate deltas and the *move fields* (the actual tour positions a move
+  acts on), so the winning move is read straight off the fold with no index decoding —
+  this is what lets the candidate set be an arbitrary, strategy-supplied grid rather
+  than a fixed ``(outer, offset)`` lattice.
 * :func:`_local_search` — the on-device best-improvement loop (``lax.while_loop``),
   so the whole optimisation is a single jit call with no per-step host sync.
 """
@@ -24,32 +28,29 @@ import jax.numpy as jnp
 from jax import lax
 
 
-def _windowed_best(score_block: Callable, n: int, inner: int, *, block: int):
-    """Best move over a ``(outer, inner)`` candidate grid, scanned in blocks.
+def _fold_best(score_block: Callable, n_blocks: int, n_fields: int):
+    """Best candidate over a blocked score grid, carrying its move fields.
 
-    ``score_block(outer_start)`` returns a ``(block, inner)`` array of candidate
-    deltas (``inf`` for invalid candidates), where row ``r`` is outer index
-    ``outer_start + r`` and column ``c`` is the algorithm's ``c``-th windowed
-    offset. Returns ``(best_delta, best_outer, best_inner)``.
+    ``score_block(b)`` returns ``(delta, fields)`` for block ``b``: ``delta`` is a
+    flat ``(L,)`` array of candidate deltas (``inf`` for invalid candidates) and
+    ``fields`` is a length-``n_fields`` tuple of flat ``(L,)`` int arrays giving the
+    move components (e.g. ``(i, j)`` for 2-opt, ``(i, j, k, recon)`` for 3-opt) for
+    each candidate. Returns ``(best_delta, best_fields)`` where ``best_fields`` is the
+    field tuple of the global best candidate across all blocks.
     """
-    n_blocks = (n + block - 1) // block
 
     def step(b, carry):
-        best_delta, best_outer, best_inner = carry
-        outer_start = b * block
-        deltas = score_block(outer_start).reshape(-1)  # (block * inner,)
-        idx = jnp.argmin(deltas)
-        d = deltas[idx]
-        row = idx // inner
-        col = idx % inner
+        best_delta, best_fields = carry
+        delta, fields = score_block(b)
+        idx = jnp.argmin(delta)
+        d = delta[idx]
         better = d < best_delta
-        return (
-            jnp.where(better, d, best_delta),
-            jnp.where(better, outer_start + row, best_outer),
-            jnp.where(better, col, best_inner),
+        new_fields = tuple(
+            jnp.where(better, f[idx], bf) for f, bf in zip(fields, best_fields)
         )
+        return jnp.where(better, d, best_delta), new_fields
 
-    init = (jnp.float32(jnp.inf), jnp.int32(0), jnp.int32(0))
+    init = (jnp.float32(jnp.inf), tuple(jnp.int32(0) for _ in range(n_fields)))
     return lax.fori_loop(0, n_blocks, step, init)
 
 

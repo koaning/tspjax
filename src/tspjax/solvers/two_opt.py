@@ -5,12 +5,12 @@ boundary edges and reconnects them the other way. In a *symmetric* problem the
 interior edges of the segment just flip direction and cancel, so only the four
 boundary edges change and a move's delta is an O(1) computation.
 
-The candidate set is restricted to a positional *window*: only segments whose
-length is at most ``window`` are scored each step. With a curve-ordered start tour
-(see :mod:`tspjax.construct`) a positional window doubles as a spatial neighbourhood,
-which is where most improving moves live. The shared core in
-:mod:`._local_search` folds the search in blocks so peak memory never reaches the
-full ``(n, n)`` delta grid.
+Which segments get scored is decided by a pluggable *candidate strategy* (see
+:mod:`.candidates`): the default :func:`~tspjax.solvers.candidates.all_pairs` is a full
+search, :func:`~tspjax.solvers.candidates.windowed` restricts to a positional window,
+and :func:`~tspjax.solvers.candidates.nearest` restricts to spatial neighbours. The
+shared core in :mod:`._local_search` folds the search in blocks so peak memory never
+reaches the full ``(n, n)`` delta grid.
 """
 
 from __future__ import annotations
@@ -18,9 +18,10 @@ from __future__ import annotations
 import jax.numpy as jnp
 import numpy as np
 
-from ._local_search import _local_search, _windowed_best
+from ._local_search import _fold_best, _local_search
+from .candidates import all_pairs, windowed
 
-#: Rows of the candidate grid scored at once. Caps peak memory at O(block * window).
+#: Anchors of the candidate grid scored at once. Caps peak memory at O(block * width).
 _BLOCK = 256
 
 
@@ -33,14 +34,17 @@ def _apply_swap(tour, move):
     return tour[src]
 
 
-def two_opt(distances, tour=None, *, window=None, max_steps=10_000):
+def two_opt(distances, tour=None, *, window=None, candidates=None, max_steps=10_000):
     """Best-improvement 2-opt to a local minimum (or ``max_steps``).
 
-    ``distances`` is an ``(n, n)`` **symmetric** matrix; ``tour`` an optional
-    ``(n,)`` start permutation (defaults to ``jnp.arange(n)``). Each step scores
-    only segments of length ``<= window`` (``None`` -> full coverage) and folds the
-    search in blocks, so peak memory stays bounded regardless of ``n``. Returns the
-    improved ``(n,)`` ``int32`` tour.
+    ``distances`` is an ``(n, n)`` **symmetric** matrix; ``tour`` an optional ``(n,)``
+    start permutation (defaults to ``jnp.arange(n)``). Returns the improved ``(n,)``
+    ``int32`` tour.
+
+    The candidate set is chosen by ``candidates``, a strategy from :mod:`.candidates`
+    (default :func:`~tspjax.solvers.candidates.all_pairs`). The ``window`` keyword is a
+    convenience alias for ``candidates=windowed(window)``; passing both is an error.
+    Whatever the strategy, the search folds in blocks so peak memory stays bounded.
 
     The optimisation runs entirely on device, and the function is ``jax.vmap``-able
     over a leading batch axis on ``tour`` (``distances`` stays fixed). The
@@ -62,35 +66,58 @@ def two_opt(distances, tour=None, *, window=None, max_steps=10_000):
             "Segment-reversal 2-opt is only correct when dist(a, b) == dist(b, a)."
         )
 
+    if window is not None and candidates is not None:
+        raise ValueError(
+            "pass either `window` or `candidates`, not both; `window=w` is just an "
+            "alias for `candidates=windowed(w)`."
+        )
+
     if tour is None:
         tour = jnp.arange(n)
     tour = jnp.asarray(tour, dtype=jnp.int32)
 
-    window = (n - 1) if window is None else min(int(window), n - 1)
-    if n <= 3 or window < 1:
+    if n <= 3:
         return tour  # no non-trivial 2-opt move exists
 
-    block = min(_BLOCK, n)
-    offsets = jnp.arange(1, window + 1, dtype=jnp.int32)  # segment lengths j - i
+    if candidates is None:
+        candidates = all_pairs if window is None else windowed(window)
+    spec = candidates(D, n)
+
+    block = min(_BLOCK, spec.n_anchors)
+    n_blocks = (spec.n_anchors + block - 1) // block
 
     def best_move(cur):
-        def score_block(outer_start):
-            i = (outer_start + jnp.arange(block, dtype=jnp.int32))[:, None]  # (block,1)
-            j = i + offsets[None, :]                                        # (block,window)
-            valid = (i > 0) & (j <= n - 1)
-            # Clip gather indices into range; invalid entries are masked to inf below.
-            pi = jnp.clip(i - 1, 0, n - 1)
-            ci = jnp.clip(i, 0, n - 1)
-            cj = jnp.clip(j, 0, n - 1)
-            prev_i, city_i = cur[pi], cur[ci]
-            city_j, next_j = cur[cj], cur[(cj + 1) % n]
-            old = D[prev_i, city_i] + D[city_j, next_j]
-            new = D[prev_i, city_j] + D[city_i, next_j]
-            return jnp.where(valid, new - old, jnp.inf)
+        anchors = spec.anchors(cur)
 
-        delta, outer, inner = _windowed_best(score_block, n, window, block=block)
-        i = outer
-        j = i + 1 + inner  # offsets start at 1, so column `inner` is length inner+1
+        def score_block(b):
+            rows = b * block + jnp.arange(block, dtype=jnp.int32)
+            valid_row = (rows < spec.n_anchors)[:, None]
+            a = anchors[jnp.clip(rows, 0, spec.n_anchors - 1)][:, None]  # (block, 1)
+            bp = spec.partners(cur, a[:, 0])  # (block, width) partner edge positions
+            lo = jnp.minimum(a, bp)
+            hi = jnp.maximum(a, bp)
+            loc = jnp.clip(lo, 0, n - 1)
+            hic = jnp.clip(hi, 0, n - 1)
+            # Only the four boundary edges change: reversing cur[lo+1..hi] swaps
+            # (cur[lo],cur[lo+1]) & (cur[hi],cur[hi+1]) for (cur[lo],cur[hi]) &
+            # (cur[lo+1],cur[hi+1]).
+            c_lo, c_lo1 = cur[loc], cur[(loc + 1) % n]
+            c_hi, c_hi1 = cur[hic], cur[(hic + 1) % n]
+            old = D[c_lo, c_lo1] + D[c_hi, c_hi1]
+            new = D[c_lo, c_hi] + D[c_lo1, c_hi1]
+            valid = (
+                valid_row
+                & (bp >= 0)
+                & (bp <= n - 1)
+                & (a != bp)
+                & ~((lo == 0) & (hi == n - 1))  # full reversal is a no-op
+            )
+            delta = jnp.where(valid, new - old, jnp.inf).reshape(-1)
+            i = (loc + 1).reshape(-1)
+            j = hic.reshape(-1)
+            return delta, (i, j)
+
+        delta, (i, j) = _fold_best(score_block, n_blocks, 2)
         return delta, (i, j)
 
     return _local_search(D, tour, best_move, _apply_swap, max_steps=max_steps)
