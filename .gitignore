@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+
+# Virtual envs / uv
+.venv/
+venv/
+uv.lock
+
+# Test / coverage / caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Jupyter / marimo
+.ipynb_checkpoints/
+__marimo__/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
