@@ -45,6 +45,7 @@ def _():
         all_pairs,
         hilbert_tour,
         jax,
+        jnp,
         longest_edge,
         moore_tour,
         morton_tour,
@@ -254,6 +255,91 @@ def _(algo_picker, plt, problem, results, starts):
         )
     fig.tight_layout()
     fig
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    # OR-Tools can be slow on large instances, so it's gated behind a button: the solve
+    # only runs on a click, not on every reactive re-run.
+    run_or = mo.ui.run_button(label="Run OR-Tools reference")
+    run_or
+    return (run_or,)
+
+
+@app.cell(hide_code=True)
+def _(algo_picker, jnp, mo, problem, results, run_or, time):
+    # Reference point: solve the same instance with OR-Tools (guided local search) and
+    # put it next to our best local-search result, so we can see how close (and how
+    # fast) we get. Gated by the run button above.
+    mo.stop(
+        not run_or.value,
+        mo.md(
+            "*OR-Tools is off — click **Run OR-Tools reference** above to solve this "
+            "instance (it can be slow on large problems).*"
+        ),
+    )
+
+    import numpy as np
+    from ortools.constraint_solver import pywrapcp, routing_enums_pb2
+
+    _n = problem.dimension
+    _D = np.asarray(problem.distances).round().astype(int)  # OR-Tools wants int costs
+    _mgr = pywrapcp.RoutingIndexManager(_n, 1, 0)
+    _routing = pywrapcp.RoutingModel(_mgr)
+
+    def _arc(a, b):
+        return int(_D[_mgr.IndexToNode(a), _mgr.IndexToNode(b)])
+
+    _routing.SetArcCostEvaluatorOfAllVehicles(_routing.RegisterTransitCallback(_arc))
+    _params = pywrapcp.DefaultRoutingSearchParameters()
+    _params.first_solution_strategy = (
+        routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+    )
+    _params.local_search_metaheuristic = (
+        routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+    )
+    _params.time_limit.FromSeconds(3)
+
+    # Time the solve + route read-back, to compare against our own wall times.
+    _t0 = time.perf_counter()
+    _sol = _routing.SolveWithParameters(_params)
+    _idx, _order = _routing.Start(0), []
+    while not _routing.IsEnd(_idx):
+        _order.append(_mgr.IndexToNode(_idx))
+        _idx = _sol.Value(_routing.NextVar(_idx))
+    _or_ms = (time.perf_counter() - _t0) * 1000
+    or_tour = jnp.asarray(_order)  # public: the map cell below plots it
+    _or_len = float(problem.tour_length(or_tour))
+
+    # Our best local-search result, and the time that particular run took.
+    _name, _our = min(results.items(), key=lambda kv: kv[1]["length"])
+
+    def _gap(v):
+        return f"{(v / problem.best_known - 1) * 100:+.2f}%"
+
+    mo.md(
+        f"""
+        ### OR-Tools reference (guided local search, 3s)
+
+        | solver | length | gap to optimum | wall time (ms) |
+        |---|---|---|---|
+        | OR-Tools | {_or_len:,.0f} | {_gap(_or_len)} | {_or_ms:,.0f} |
+        | our best — {_name} ({algo_picker.value}) | {_our["length"]:,.0f} | {_gap(_our["length"])} | {_our["ms"]:.1f} |
+        | optimum | {problem.best_known:,} | — | — |
+        """
+    )
+    return (or_tour,)
+
+
+@app.cell(hide_code=True)
+def _(or_tour, plt, problem):
+    # Map of the OR-Tools solution (only appears once the reference has been run).
+    fig_or, _ax = plt.subplots(figsize=(5, 5))
+    problem.plot(tour=or_tour, ax=_ax)
+    _ax.set_title(f"OR-Tools tour — {float(problem.tour_length(or_tour)):,.0f}")
+    fig_or.tight_layout()
+    fig_or
     return
 
 
