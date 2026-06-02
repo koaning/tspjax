@@ -15,4 +15,17 @@ Conventions for anything added here:
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from .candidates import all_pairs, longest_edge, nearest, windowed
+from .iterated import iterated_local_search
+from .three_opt import three_opt
+from .two_opt import two_opt
+
+__all__ = [
+    "iterated_local_search",
+    "three_opt",
+    "two_opt",
+    "all_pairs",
+    "windowed",
+    "nearest",
+    "longest_edge",
+]

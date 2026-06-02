@@ -77,13 +77,12 @@ _KERNELS = {
 
 def distance_matrix(coords: jnp.ndarray, edge_weight_type: str) -> jnp.ndarray:
     """Build the ``(n, n)`` distance matrix for a coordinate edge-weight type."""
-    try:
-        kernel = _KERNELS[edge_weight_type]
-    except KeyError as exc:
+    if edge_weight_type not in _KERNELS:
         raise ValueError(
             f"No distance kernel for EDGE_WEIGHT_TYPE {edge_weight_type!r}; "
             f"supported: {sorted(_KERNELS)}"
-        ) from exc
+        )
+    kernel = _KERNELS[edge_weight_type]
     D = kernel(jnp.asarray(coords, dtype=jnp.float32))
     # Force exact zeros on the diagonal: the GEO formula's "+1.0" term otherwise
     # yields a self-distance of 1. Harmless for tour length (tours never visit

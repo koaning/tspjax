@@ -17,6 +17,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "marimo>=0.9",
+    "wigglystuff>=0.5",
 ]
 
 [build-system]
