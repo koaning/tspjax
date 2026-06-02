@@ -12,9 +12,14 @@ original Heidelberg source is unreliable.
 
 ## Install
 
+It isn't on PyPI — install straight from GitHub:
+
 ```bash
-uv add tspjax          # or: pip install tspjax
+uv add "git+https://github.com/koaning/tspjax.git"     # or: pip install "git+https://github.com/koaning/tspjax.git"
 ```
+
+Pin a tag or commit by appending `@<ref>`, e.g.
+`git+https://github.com/koaning/tsplib.git@main`.
 
 ## Quick start
 
