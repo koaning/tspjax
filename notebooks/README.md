@@ -4,11 +4,12 @@ Interactive [marimo](https://marimo.io) notebooks demoing `tspjax`.
 
 ## `tsp_quickstart.py`
 
-Loads `berlin52` (52 cities — runs in well under a second on a laptop CPU), builds
-starting tours with the space-filling-curve constructors (`hilbert_tour`,
-`morton_tour`, `moore_tour`), polishes them with windowed `two_opt`, plots the
-before/after, and finishes with a `jax.vmap` sweep over random starts. It's the
-package-level counterpart to the GPU-benchmark `tsp-demo.py` at the repo root.
+Pick a small TSPLIB instance from a dropdown (all run in well under a second on a
+laptop CPU), build starting tours with the space-filling-curve constructors
+(`hilbert_tour`, `morton_tour`, `moore_tour`), polish them with windowed `two_opt`
+(final length, gap-to-optimum, and wall time per constructor), and plot the
+before/after. It's the package-level counterpart to the GPU-benchmark `tsp-demo.py`
+at the repo root.
 
 ### Run it
 

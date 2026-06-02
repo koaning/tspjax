@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.23.4"
+__generated_with = "0.23.8"
 app = marimo.App(width="medium")
 
 
@@ -48,33 +48,41 @@ def _():
 
 @app.cell(hide_code=True)
 def _(jax, mo):
+    # Small, symmetric, 2D instances — fast on CPU and plottable.
+    problems = [
+        "berlin52", "eil51", "st70", "eil76", "pr76", "rd100",
+        "kroA100", "ch150", "tsp225", "a280", "lin318",
+    ]
+    problem_picker = mo.ui.dropdown(options=problems, value="berlin52", label="Problem")
+
     # CPU is always available; `default_backend()` reports the accelerator (gpu/tpu)
     # only when one is present — no exceptions, so the toggle degrades cleanly to a
     # single "cpu" option on a laptop.
     _accel = jax.default_backend()
     available_backends = ["cpu"] + ([_accel] if _accel != "cpu" else [])
-
     backend_picker = mo.ui.dropdown(
         options=available_backends,
         value=available_backends[0],
         label="JAX backend",
     )
+
     mo.vstack(
         [
-            backend_picker,
+            mo.hstack([problem_picker, backend_picker], justify="start"),
             mo.md(
-                f"Detected backends: `{available_backends}`. "
-                "Select one — every computation below runs on the device you pick."
+                "Pick an instance and a backend "
+                f"(detected: `{available_backends}`). Everything below re-runs on "
+                "your choices."
             ),
         ]
     )
-    return (backend_picker,)
+    return backend_picker, problem_picker
 
 
 @app.cell(hide_code=True)
-def _(backend_picker, jax, mo, tspjax):
+def _(backend_picker, jax, mo, problem_picker, tspjax):
     device = jax.devices(backend_picker.value)[0]
-    problem = tspjax.load("berlin52")
+    problem = tspjax.load(problem_picker.value)
 
     mo.md(
         f"""
@@ -100,17 +108,18 @@ def _(hilbert_tour, jnp, mo, moore_tour, morton_tour, problem):
         f"| {name} | {float(problem.tour_length(tour)):,.0f} |"
         for name, tour in starts.items()
     )
+
     mo.md(
-        f"""
-        ### Starting tours
+    f"""
+    ### Starting tours
 
-        The identity tour `0,1,2,…` is length **{identity_len:,.0f}**. A curve-ordered
-        start is far better before any optimisation runs:
+    The identity tour `0,1,2,…` is length **{identity_len:,.0f}**. A curve-ordered
+    start is far better before any optimisation runs:
 
-        | constructor | start length |
-        |---|---|
-        {_rows}
-        """
+    | constructor | start length |
+    |---|---|
+    {_rows}
+    """
     )
     return (starts,)
 
@@ -140,15 +149,15 @@ def _(device, jax, mo, problem, starts, time, two_opt):
         for name, r in results.items()
     )
     mo.md(
-        f"""
-        ### After windowed 2-opt (full window)
+    f"""
+    ### After windowed 2-opt (full window)
 
-        | start | final length | gap to optimum | wall time (ms) |
-        |---|---|---|---|
-        {_rows}
-        """
+    | start | final length | gap to optimum | wall time (ms) |
+    |---|---|---|---|
+    {_rows}
+    """
     )
-    return D, results
+    return (results,)
 
 
 @app.cell(hide_code=True)
@@ -162,34 +171,6 @@ def _(plt, problem, results, starts):
     ax_b.set_title(f"after 2-opt — {results[which]['length']:,.0f}")
     fig.tight_layout()
     fig
-    return
-
-
-@app.cell(hide_code=True)
-def _(D, device, jax, jnp, mo, problem, two_opt):
-    # Bonus: 2-opt is vmap-able. Polish many random starts at once on the device and
-    # keep the best — still trivial on CPU for a 52-city instance.
-    _key = jax.random.PRNGKey(0)
-    random_starts = jnp.stack(
-        [
-            jax.random.permutation(jax.random.fold_in(_key, i), problem.dimension)
-            for i in range(16)
-        ]
-    )
-    random_starts = jax.device_put(random_starts, device)
-    polished = jax.vmap(two_opt, in_axes=(None, 0))(D, random_starts)
-    lengths = jax.vmap(problem.tour_length)(polished)
-    best = float(lengths.min())
-
-    mo.md(
-        f"""
-        ### vmap over 16 random starts
-
-        Best of 16 independently-polished random tours: **{best:,.0f}**
-        (gap {best / problem.best_known - 1:+.2%}). One `jax.vmap` call optimises
-        them all in parallel on the selected device.
-        """
-    )
     return
 
 
