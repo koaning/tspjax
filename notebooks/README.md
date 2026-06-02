@@ -21,6 +21,20 @@ uv run --extra dev marimo edit notebooks/tsp_quickstart.py
 uv run --extra dev marimo run notebooks/tsp_quickstart.py
 ```
 
+### Run it elsewhere (molab / a fresh env)
+
+`tspjax` isn't on PyPI yet, so install it straight from GitHub with `uv`:
+
+```bash
+uv pip install "git+https://github.com/koaning/tsplib.git"
+```
+
+In a [molab](https://marimo.io) notebook, add it as a dependency the same way:
+
+```bash
+uv add "git+https://github.com/koaning/tsplib.git"
+```
+
 ### CPU / GPU toggle
 
 The notebook has a **backend dropdown** near the top. The options are built from

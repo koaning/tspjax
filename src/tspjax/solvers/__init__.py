@@ -15,6 +15,7 @@ Conventions for anything added here:
 
 from __future__ import annotations
 
+from .three_opt import three_opt
 from .two_opt import two_opt
 
-__all__ = ["two_opt"]
+__all__ = ["three_opt", "two_opt"]

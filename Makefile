@@ -8,11 +8,7 @@ install:  ## Create the uv venv with dev deps (marimo, pytest) and editable tspj
 	uv sync --extra dev
 
 notebooks: install  ## Open the notebooks/ folder in marimo (right venv)
-	uv run --extra dev marimo edit notebooks
+	uv run --extra dev marimo edit --watch notebooks
 
 test: install  ## Run the test suite
 	uv run --extra dev pytest -q
-
-pypi:
-	uv build
-	uv publish
