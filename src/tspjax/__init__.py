@@ -19,7 +19,7 @@ Quick start::
 
 from __future__ import annotations
 
-from . import santa, solvers
+from . import construct, santa, solvers
 from .loader import best_known, list_problems, load, loads
 from .problem import EuclideanProblem, FunctionProblem, MatrixProblem, Problem
 
@@ -34,6 +34,7 @@ __all__ = [
     "FunctionProblem",
     "santa",
     "solvers",
+    "construct",
 ]
 
 __version__ = "0.1.0"

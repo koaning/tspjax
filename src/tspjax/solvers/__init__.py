@@ -15,4 +15,6 @@ Conventions for anything added here:
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from .two_opt import two_opt
+
+__all__ = ["two_opt"]

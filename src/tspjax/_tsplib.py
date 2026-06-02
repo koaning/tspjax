@@ -173,9 +173,7 @@ def parse_solutions(text: str) -> dict[str, int]:
             continue
         name, rest = line.split(":", 1)
         for token in rest.split():
-            try:
+            if token.lstrip("-").isdigit():
                 out[name.strip()] = int(token)
                 break
-            except ValueError:
-                continue
     return out
